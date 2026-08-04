@@ -1,0 +1,203 @@
+Assignment name  : count_island
+Expected files   : *.c, *.h
+Allowed functions: open, close, read, write, malloc, free
+--------------------------------------------------------------------------------
+Write a program that takes a file that contains lines of equal length. Those
+lines contain characters that are either '.' or 'X'. All those lines put
+together form rectangles of '.' containing "islands" of 'X'.
+The maximum size of a line is 1024 characters, including the terminating
+newline.
+A column if formed of the set of characters in the file that are separated from
+the start of their respective lines by the same number of characters.
+Two characters are said to be touching if they are contiguous and on the same
+line, or on contiguous lines and on the same column.
+An "island" of 'X' means a set of 'X' touching each other.
+The program must walk though the file and display it after replacing all the
+'X' by a number corresponding to the position their island appears in the file,
+starting at the beginning of the file.
+There can be only one result.
+If the file is empty, or there is an error (Incoherent input, for example), or
+no parameters are passed, the program must display a newline.
+The file contains at most 10 islands.
+You will find examples in the subject directory.
+Examples:
+$>cat toto
+.................XXXXXXXX..........................................
+....................XXXXXXXXX.......XXXXXXXX.......................
+.................XXXXXXXX..............XXX...XXXXX.................
+.....................XXXXXX.....X...XXXXXXXXXXX....................
+................................X..................................
+......XXXXXXXXXXXXX.............X..................................
+..................X.............XXXXXXXXX..........................
+..................X.........XXXXXXXXXXXX...........................
+..................X................................................
+XX.............................................................XXXX
+XX..................XXXXXXXXXXXXX.................................X
+...................................................................
+.................................................................X.
+.....................XXXXX.......................................XX
+$>
+$>./count_island toto
+.................00000000..........................................
+....................000000000.......11111111.......................
+.................00000000..............111...11111.................
+.....................000000.....2...11111111111....................
+................................2..................................
+......3333333333333.............2..................................
+..................3.............222222222..........................
+..................3.........222222222222...........................
+..................3................................................
+44.............................................................5555
+44..................6666666666666.................................5
+...................................................................
+.................................................................7.
+.....................88888.......................................77
+$>
+$>cat qui_est_la
+...................................................................
+...X........X.....XXXXX......XXXXXXX...XXXXXXXXXX..XXXXXXXXXX......
+...XX......XX....XX...XX....XX.....XX.....XXXX.....XXXXXXXXXX......
+...XXXX..XXXX...XX.....XX...XX.....XX......XX......XX..............
+...XX.XXXX.XX...XX.....XX...XX.....XX......XX......XX..............
+...XX...X..XX...XX.....XX...XXXXXXXX.......XX......XXXXX...........
+...XX......XX...XXXXXXXXX...XXXX...........XX......XXXXX...........
+...XX......XX..XX.......XX..XX.XX..........XX......XX..............
+...XX......XX..XX.......XX..XX...X.........XX......XX..............
+...XX......XX..XX.......XX..XX....X......XXXXXX....XXXXXXXXXX......
+...XX......XX.XX.........XX.XX.....XX..XXXXXXXXXX..XXXXXXXXXX..X...
+...................................................................
+$>
+$>./count_island qui_est_la
+...................................................................
+...0........0.....11111......2222222...3333333333..4444444444......
+...00......00....11...11....22.....22.....3333.....4444444444......
+...0000..0000...11.....11...22.....22......33......44..............
+...00.0000.00...11.....11...22.....22......33......44..............
+...00...0..00...11.....11...22222222.......33......44444...........
+...00......00...111111111...2222...........33......44444...........
+...00......00..11.......11..22.22..........33......44..............
+...00......00..11.......11..22...5.........33......44..............
+...00......00..11.......11..22....6......333333....4444444444......
+...00......00.11.........11.22.....77..3333333333..4444444444..8...
+...................................................................
+$>
+$>cat -e rien
+$>./count_island rien | cat -e
+$
+$>
+
+#include <unistd.h>
+#include <stdlib.h>
+#include <fcntl.h>
+
+#define BUF_SIZE 200000 // assez grand pour stocker la map
+
+typedef struct s_map {
+    char **grid;
+    int rows;
+    int cols;
+}   t_map;
+
+static void    putstr(char *s, int len) { write(1, s, len); }
+
+static char    *str_dup(char *src, int len)
+{
+    char *dst = malloc(len + 1);
+    if (!dst) return NULL;
+    for (int i = 0; i < len; i++)
+        dst[i] = src[i];
+    dst[len] = '\0';
+    return dst;
+}
+
+static void free_map(t_map *map)
+{
+    if (!map) return;
+    for (int i = 0; i < map->rows; i++)
+        free(map->grid[i]);
+    free(map->grid);
+    free(map);
+}
+
+static void fill_island(t_map *map, int y, int x, char id)
+{
+    if (y < 0 || x < 0 || y >= map->rows || x >= map->cols)
+        return;
+    if (map->grid[y][x] != 'X')
+        return;
+    map->grid[y][x] = id;
+    fill_island(map, y+1, x, id);
+    fill_island(map, y-1, x, id);
+    fill_island(map, y, x+1, id);
+    fill_island(map, y, x-1, id);
+}
+
+static t_map *read_map(char *filename)
+{
+    int fd = open(filename, O_RDONLY);
+    if (fd < 0) return NULL;
+    char buf[BUF_SIZE];
+    int rd = read(fd, buf, BUF_SIZE-1);
+    close(fd);
+    if (rd <= 0) return NULL;
+    buf[rd] = '\0';
+
+    int cols = -1, rows = 0, start = 0;
+    for (int i = 0; i <= rd; i++)
+        if (buf[i] == '\n' || buf[i] == '\0') {
+            int len = i - start;
+            if (cols == -1) cols = len;
+            if (len != cols) return NULL; // lignes incohérentes
+            rows++;
+            start = i+1;
+        }
+
+    char **grid = malloc(sizeof(char*) * rows);
+    if (!grid) return NULL;
+    int r = 0; start = 0;
+    for (int i = 0; i <= rd; i++)
+        if (buf[i] == '\n' || buf[i] == '\0') {
+            grid[r++] = str_dup(buf+start, i-start);
+            start = i+1;
+        }
+
+    t_map *map = malloc(sizeof(t_map));
+    if (!map) return NULL;
+    map->grid = grid;
+    map->rows = rows;
+    map->cols = cols;
+    return map;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc != 2) {
+        write(1, "\n", 1);
+        return 0;
+    }
+    t_map *map = read_map(argv[1]);
+    if (!map) {
+        write(1, "\n", 1);
+        return 0;
+    }
+    int id = 0;
+    for (int y = 0; y < map->rows; y++) {
+        for (int x = 0; x < map->cols; x++) {
+            if (map->grid[y][x] == 'X') {
+                if (id > 9) {
+                    free_map(map);
+                    write(1, "\n", 1);
+                    return 0;
+                }
+                fill_island(map, y, x, '0' + id);
+                id++;
+            }
+        }
+    }
+    for (int y = 0; y < map->rows; y++) {
+        putstr(map->grid[y], map->cols);
+        write(1, "\n", 1);
+    }
+    free_map(map);
+    return 0;
+}
